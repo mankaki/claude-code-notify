@@ -58,23 +58,6 @@ fi
 TITLE="Claude Code"
 [ -n "$PROJECT" ] && TITLE="Claude Code · $PROJECT"
 
-case "$TERM_PROGRAM" in
-  vscode)          APP_BUNDLE="com.microsoft.VSCode" ;;
-  cursor)          APP_BUNDLE="com.todesktop.230313mzl4w4u92" ;;
-  iTerm.app)       APP_BUNDLE="com.googlecode.iterm2" ;;
-  WezTerm)         APP_BUNDLE="com.github.wez.wezterm" ;;
-  ghostty)         APP_BUNDLE="com.mitchellh.ghostty" ;;
-  Apple_Terminal)  APP_BUNDLE="com.apple.Terminal" ;;
-  *)               APP_BUNDLE="com.apple.Terminal" ;;
-esac
-
-ICON_PATH="$HOME/.claude/icon.png"
-if [ -f "$ICON_PATH" ]; then
-  ICON_CLAUSE="with icon (POSIX file \"$ICON_PATH\")"
-else
-  ICON_CLAUSE="with icon note"
-fi
-
 case "$KIND" in
   permission) SOUND="Hero"  ;;
   select)     SOUND="Ping"  ;;
@@ -83,40 +66,8 @@ case "$KIND" in
   *)          SOUND="Pop"   ;;
 esac
 
-if [ "$KIND" = "permission" ] || [ "$KIND" = "select" ]; then
-  # permission 类给「允许」按钮，点了会激活终端 + 模拟 1+Enter 选第一项
-  if [ "$KIND" = "permission" ]; then
-    BTN_SPEC='buttons {"允许", "去终端处理"} default button 2 cancel button 2'
-    AUTO_ALLOW=1
-  else
-    BTN_SPEC='buttons {"去终端处理"} default button 1'
-    AUTO_ALLOW=0
-  fi
-
-  ( osascript <<APPLESCRIPT 2>/dev/null
-tell application "System Events"
-  set theResult to display dialog $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$MSG") with title $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$TITLE") $ICON_CLAUSE $BTN_SPEC giving up after 120
-end tell
-if gave up of theResult is false then
-  tell application id "$APP_BUNDLE"
-    activate
-  end tell
-  if $AUTO_ALLOW = 1 and button returned of theResult is "允许" then
-    delay 0.4
-    tell application "System Events"
-      keystroke "1"
-      delay 0.15
-      keystroke return
-    end tell
-  end if
-end if
-APPLESCRIPT
-  ) &
-  afplay "/System/Library/Sounds/${SOUND}.aiff" >/dev/null 2>&1 &
-else
-  python3 -c '
+python3 -c '
 import json, sys
 msg, title, sound = sys.argv[1], sys.argv[2], sys.argv[3]
 print(f"display notification {json.dumps(msg)} with title {json.dumps(title)} sound name {json.dumps(sound)}")
 ' "$MSG" "$TITLE" "$SOUND" | osascript 2>/dev/null || true
-fi
