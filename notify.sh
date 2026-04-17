@@ -56,7 +56,7 @@ else:
     except FileNotFoundError:
         pass
 
-print(f'display notification {json.dumps(msg)} with title "Claude Code" sound name "Glass"')
+print(f'display notification {json.dumps(msg, ensure_ascii=False)} with title "Claude Code" sound name "Glass"')
 PY
 )
 
