@@ -1,51 +1,73 @@
 #!/bin/bash
-# Claude Code Notification hook: macOS notification + sound.
-# Permission-style messages additionally pop an AppleScript dialog that
-# force-focuses the terminal (click-to-focus on the notification itself
-# is broken on macOS 26 because NSUserNotification is deprecated).
+# Claude Code Notification hook.
 #
-# Dedup logic: within the same session, the "waiting for your input"
-# idle reminder only notifies the first time; subsequent triggers
-# (Claude Code re-fires it every ~60s) are silenced. Any other
-# notification resets the state so the next idle reminder will notify
-# again.
+# 功能：
+#   - 读 /tmp/claude-notify-<sid>.meta 拿到 cwd，标题显示项目名
+#   - 按消息关键词分类：permission/select/error/idle/other，各走不同音效和呈现
+#   - waiting-for-input 空闲提醒同会话只响第一次，响应其他事件后自动重置
 #
-# Dependencies: python3 (macOS 自带), osascript (macOS 自带).
+# 依赖：python3（macOS 自带）、osascript（macOS 自带）
 
 input=$(cat)
 
-IFS=$'\t' read -r SID MSG IS_IDLE <<< "$(printf '%s' "$input" | python3 -c '
-import json, sys
+eval "$(printf '%s' "$input" | python3 -c '
+import json, os, sys, shlex
+
 try:
     d = json.loads(sys.stdin.read())
 except Exception:
     d = {}
-msg = (d.get("message") or "Claude needs your attention").replace("\n"," ").replace("\r"," ").replace("\t"," ")
-sid = (d.get("session_id") or "default").replace("\t","_")
-is_idle = "1" if "waiting for your input" in msg.lower() else "0"
-print(f"{sid}\t{msg}\t{is_idle}")
+
+msg = (d.get("message") or "Claude needs your attention").replace("\n"," ").replace("\r"," ").replace("\t"," ").strip()
+sid = (d.get("session_id") or "default").replace("/", "_").replace("\t","_")
+
+cwd = ""
+try:
+    with open(f"/tmp/claude-notify-{sid}.meta") as f:
+        cwd = (json.load(f).get("cwd") or "")
+except Exception:
+    pass
+project = os.path.basename(cwd) if cwd else ""
+
+low = msg.lower()
+if "waiting for your input" in low:
+    kind = "idle"
+elif any(k in low for k in ["permission", "approve", "allow", "允许", "授权"]):
+    kind = "permission"
+elif any(k in low for k in ["choose", "select", "choice", "选择"]):
+    kind = "select"
+elif any(k in low for k in ["error", "failed", "rate limit", "session limit", "错误", "失败"]):
+    kind = "error"
+else:
+    kind = "other"
+
+print(f"MSG={shlex.quote(msg)}")
+print(f"SID={shlex.quote(sid)}")
+print(f"PROJECT={shlex.quote(project)}")
+print(f"KIND={shlex.quote(kind)}")
 ')"
 
 state="/tmp/claude-notify-${SID}.waiting"
-
-if [ "$IS_IDLE" = "1" ]; then
+if [ "$KIND" = "idle" ]; then
   [ -f "$state" ] && exit 0
   touch "$state"
 else
   rm -f "$state"
 fi
 
+TITLE="Claude Code"
+[ -n "$PROJECT" ] && TITLE="Claude Code · $PROJECT"
+
 case "$TERM_PROGRAM" in
-  vscode)          APP_NAME="Visual Studio Code"; APP_BUNDLE="com.microsoft.VSCode" ;;
-  cursor)          APP_NAME="Cursor"; APP_BUNDLE="com.todesktop.230313mzl4w4u92" ;;
-  iTerm.app)       APP_NAME="iTerm"; APP_BUNDLE="com.googlecode.iterm2" ;;
-  WezTerm)         APP_NAME="WezTerm"; APP_BUNDLE="com.github.wez.wezterm" ;;
-  ghostty)         APP_NAME="Ghostty"; APP_BUNDLE="com.mitchellh.ghostty" ;;
-  Apple_Terminal)  APP_NAME="Terminal"; APP_BUNDLE="com.apple.Terminal" ;;
-  *)               APP_NAME="Terminal"; APP_BUNDLE="com.apple.Terminal" ;;
+  vscode)          APP_BUNDLE="com.microsoft.VSCode" ;;
+  cursor)          APP_BUNDLE="com.todesktop.230313mzl4w4u92" ;;
+  iTerm.app)       APP_BUNDLE="com.googlecode.iterm2" ;;
+  WezTerm)         APP_BUNDLE="com.github.wez.wezterm" ;;
+  ghostty)         APP_BUNDLE="com.mitchellh.ghostty" ;;
+  Apple_Terminal)  APP_BUNDLE="com.apple.Terminal" ;;
+  *)               APP_BUNDLE="com.apple.Terminal" ;;
 esac
 
-# 图标路径：~/.claude/icon.png 存在就用，否则 dialog 用系统默认
 ICON_PATH="$HOME/.claude/icon.png"
 if [ -f "$ICON_PATH" ]; then
   ICON_CLAUSE="with icon (POSIX file \"$ICON_PATH\")"
@@ -53,17 +75,18 @@ else
   ICON_CLAUSE="with icon note"
 fi
 
-# 判断是不是需要人做决定的消息（权限/选择/确认）
-NEEDS_DECISION=0
-if printf '%s' "$MSG" | grep -qiE "permission|approve|confirm|choose|select|允许|拒绝|确认|选择"; then
-  NEEDS_DECISION=1
-fi
+case "$KIND" in
+  permission) SOUND="Hero"  ;;
+  select)     SOUND="Ping"  ;;
+  error)      SOUND="Basso" ;;
+  idle)       SOUND="Glass" ;;
+  *)          SOUND="Pop"   ;;
+esac
 
-if [ "$NEEDS_DECISION" = "1" ]; then
-  # 后台弹 dialog（不抢焦点），点「去终端处理」后通过 bundle id 激活终端。
+if [ "$KIND" = "permission" ] || [ "$KIND" = "select" ]; then
   ( osascript <<APPLESCRIPT 2>/dev/null
 tell application "System Events"
-  set theResult to display dialog $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$MSG") with title "Claude Code" $ICON_CLAUSE buttons {"去终端处理"} default button 1 giving up after 120
+  set theResult to display dialog $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$MSG") with title $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$TITLE") $ICON_CLAUSE buttons {"去终端处理"} default button 1 giving up after 120
 end tell
 if gave up of theResult is false then
   tell application id "$APP_BUNDLE"
@@ -72,10 +95,11 @@ if gave up of theResult is false then
 end if
 APPLESCRIPT
   ) &
+  afplay "/System/Library/Sounds/${SOUND}.aiff" >/dev/null 2>&1 &
 else
-  # 普通通知：声音 + banner，点击无效但至少有提示音
   python3 -c '
 import json, sys
-print(f"display notification {json.dumps(sys.argv[1])} with title \"Claude Code\" sound name \"Glass\"")
-' "$MSG" | osascript 2>/dev/null || true
+msg, title, sound = sys.argv[1], sys.argv[2], sys.argv[3]
+print(f"display notification {json.dumps(msg)} with title {json.dumps(title)} sound name {json.dumps(sound)}")
+' "$MSG" "$TITLE" "$SOUND" | osascript 2>/dev/null || true
 fi

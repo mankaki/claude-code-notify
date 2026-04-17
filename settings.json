@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/session-start.sh"
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "",
@@ -7,6 +18,17 @@
           {
             "type": "command",
             "command": "~/.claude/notify.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/stop.sh"
           }
         ]
       }

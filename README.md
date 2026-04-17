@@ -1,13 +1,18 @@
 # claude-code-notify
 
-Claude Code 在需要你操作（权限确认、选择、空闲等待输入等）时，通过 macOS 系统通知 + 提示音提醒你，防止晾着终端错过。
+Claude Code 在需要你操作或完成任务时，通过 macOS 系统通知 + 分类提示音提醒你，防止晾着终端错过。
 
 ## 特性
 
-- 空闲提醒：macOS 原生通知 banner + Glass 提示音
-- **权限/选择/确认**类事件：弹 AppleScript 对话框，显示 Claude 的原话和「去终端处理」按钮（不抢焦点，不打断你手上的事）
-- 同一会话内「waiting for your input」空闲提醒只响**第一次**，不会每 60 秒骚扰
-- 响应过其他事件后状态重置，下次再空闲会再提醒一次
+- **消息分类**：权限 / 选择 / 错误 / 空闲 / 任务完成，各有不同音效
+  - 权限确认 → Hero 声 + AppleScript 对话框，点「去终端处理」跳回 VS Code
+  - 等你选项 → Ping 声 + 对话框
+  - 错误/限流 → Basso 声 + banner
+  - 空闲等待 → Glass 声 + banner，同会话只响第一次
+  - 任务完成 → Funk 声 + banner
+- **通知标题带项目名**：「Claude Code · 豆瓣转notion」，多会话一眼分清
+- **Claude 图标**：对话框左侧用 Claude 官方 logo
+- **不抢焦点**：对话框后台弹，你手上的事不会被打断；只有点按钮才激活终端
 
 ## 依赖
 
@@ -24,13 +29,13 @@ git clone https://github.com/mankaki/claude-code-notify.git
 cd claude-code-notify
 
 # 2. 放到 ~/.claude/
-cp notify.sh ~/.claude/notify.sh
-chmod +x ~/.claude/notify.sh
-cp icon.png ~/.claude/icon.png   # Claude logo，dialog 会用它；没有就 fallback 系统图标
+cp notify.sh session-start.sh stop.sh ~/.claude/
+chmod +x ~/.claude/notify.sh ~/.claude/session-start.sh ~/.claude/stop.sh
+cp icon.png ~/.claude/icon.png   # Claude logo，对话框会用它；没有就 fallback 系统图标
 
 # 3. 合并 hooks 到你的 ~/.claude/settings.json
 #    —— 如果文件不存在，直接复制 settings.json 过去
-#    —— 如果已有内容（比如 env、model），只把 "hooks" 字段合并进去，别整个覆盖
+#    —— 如果已有内容（env、model 等），只把 "hooks" 字段合并进去，别整个覆盖
 ```
 
 合并后的 `~/.claude/settings.json` 大概长这样：
@@ -40,13 +45,14 @@ cp icon.png ~/.claude/icon.png   # Claude logo，dialog 会用它；没有就 fa
   "env": { "...": "..." },
   "model": "opus[1m]",
   "hooks": {
+    "SessionStart": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "~/.claude/session-start.sh" }] }
+    ],
     "Notification": [
-      {
-        "matcher": "",
-        "hooks": [
-          { "type": "command", "command": "~/.claude/notify.sh" }
-        ]
-      }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "~/.claude/notify.sh" }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "~/.claude/stop.sh" }] }
     ]
   }
 }
@@ -56,12 +62,18 @@ cp icon.png ~/.claude/icon.png   # Claude logo，dialog 会用它；没有就 fa
 
 新开 Claude Code 会话自动生效。当前正在运行的会话需要打开一次 `/hooks` 菜单（或重启 CLI）让配置重载。
 
+## 工作原理
+
+- **SessionStart** hook 把 `session_id + cwd` 存到 `/tmp/claude-notify-<sid>.meta`
+- **Notification** hook 读 meta 拿项目名，按关键词分类，派发到 banner 或 dialog
+- **Stop** hook 弹「任务完成」通知，清理 meta 文件
+- 空闲去重用 `/tmp/claude-notify-<sid>.waiting` 做标记
+
 ## 调整
 
-- **换提示音**：改 `notify.sh` 里的 `Glass`，可选 Basso / Blow / Bottle / Frog / Funk / Glass / Hero / Morse / Ping / Pop / Purr / Sosumi / Submarine / Tink
-- **自定义去重**：`notify.sh` 里判断 `waiting for your input` 的那段就是去重规则，按需改
-- **自定义「需要决策」的关键词**：`grep -qiE "permission|approve|confirm|choose|select|..."` 那行，加词就加关键词
-- **让对话框抢焦点**：把 `tell application "System Events"` 改成 `tell application "$APP_NAME" to activate` 再 `display dialog ...`
+- **换提示音**：改 `notify.sh` 里的 `case "$KIND"` 段；可选 Basso / Blow / Bottle / Frog / Funk / Glass / Hero / Morse / Ping / Pop / Purr / Sosumi / Submarine / Tink
+- **自定义消息分类**：`notify.sh` 里 python3 段的 `if/elif` 分支，加关键词就加关键词
+- **让对话框抢焦点**：把 `tell application "System Events"` 换成 `tell application id "$APP_BUNDLE" to activate`，再 `display dialog ...`
 - **调试**：`claude --debug` 能看到 hook 执行日志
 
 ## 参考
