@@ -84,14 +84,31 @@ case "$KIND" in
 esac
 
 if [ "$KIND" = "permission" ] || [ "$KIND" = "select" ]; then
+  # permission 类给「允许」按钮，点了会激活终端 + 模拟 1+Enter 选第一项
+  if [ "$KIND" = "permission" ]; then
+    BTN_SPEC='buttons {"允许", "去终端处理"} default button 2 cancel button 2'
+    AUTO_ALLOW=1
+  else
+    BTN_SPEC='buttons {"去终端处理"} default button 1'
+    AUTO_ALLOW=0
+  fi
+
   ( osascript <<APPLESCRIPT 2>/dev/null
 tell application "System Events"
-  set theResult to display dialog $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$MSG") with title $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$TITLE") $ICON_CLAUSE buttons {"去终端处理"} default button 1 giving up after 120
+  set theResult to display dialog $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$MSG") with title $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$TITLE") $ICON_CLAUSE $BTN_SPEC giving up after 120
 end tell
 if gave up of theResult is false then
   tell application id "$APP_BUNDLE"
     activate
   end tell
+  if $AUTO_ALLOW = 1 and button returned of theResult is "允许" then
+    delay 0.4
+    tell application "System Events"
+      keystroke "1"
+      delay 0.15
+      keystroke return
+    end tell
+  end if
 end if
 APPLESCRIPT
   ) &
