@@ -56,8 +56,10 @@ Codex 在一轮回复结束时，通过 macOS 系统通知提醒你。
 ### 特性
 
 - 回复结束 → banner + Funk 音
-- 正文优先显示最后一条 assistant 消息
+- 兼容 `task_complete` / `agent-turn-complete` 两种完成事件
+- 正文优先显示 `last_agent_message`，兼容旧字段 `last-assistant-message`
 - 自动压缩长文本：去 markdown、去路径/行号、只取首句、超长截断
+- 遇到 Codex review 结果时，优先提炼 findings / 首条结论，避免整段原文塞满通知
 
 ### 安装
 

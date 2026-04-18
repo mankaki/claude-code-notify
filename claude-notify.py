@@ -59,8 +59,9 @@ def classify(msg):
     if "waiting for your input" in low:
         return "idle", MESSAGES["idle"]
     if "needs your permission" in low:
-        if "permission to use" in low:
-            tool = msg.split("permission to use", 1)[-1].strip().rstrip(".")
+        match = re.search(r"permission to use\s+(.+?)\.?$", msg, re.IGNORECASE)
+        if match:
+            tool = match.group(1).strip()
             if tool and len(tool) < 80 and "\n" not in tool:
                 return "permission", MESSAGES["permission"].format(tool=tool)
         return "permission", MESSAGES["permission_generic"]
